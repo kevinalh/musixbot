@@ -28,10 +28,11 @@ def webhook_messenger(request: HttpRequest):
                 param['recipient'] = recipient
                 # Use the API and save the response in a variable
                 fb_response = requests.post(facebook_url, data = param)
+                response.status_code = fb_response.status_code
         # The following response is just to acknowledge the server
         # It's required!
-        response.content = 'OK'
-        response.status_code = 200
+        else:
+            response.status_code = 403
     elif request.method == 'GET':
         # Verification used by Facebook.
         verify_token = 'musixbottoken'
