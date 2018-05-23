@@ -26,11 +26,11 @@ def webhook_messenger(request: HttpRequest):
                 param['message'] = message
                 recipient['id'] = psid
                 param['recipient'] = recipient
-                # Send the JSON response
-                requests.post(facebook_url, param)
-                # The following response is just to acknowledge the server
-                # It's required!
-                response.content = 'OK'
+                # Use the API and save the response in a variable
+                fb_response = requests.post(facebook_url, data = param)
+        # The following response is just to acknowledge the server
+        # It's required!
+        response.content = 'OK'
         response.status_code = 200
     elif request.method == 'GET':
         # Verification used by Facebook.
