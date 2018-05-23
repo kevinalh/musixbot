@@ -15,6 +15,7 @@ def webhook_messenger(request: HttpRequest):
         if 'page' in post.get('object'):
             # Get useful parameters from the sender
             psid = post['sender']['id']
+            print(str(psid))
             # Construct the parameters for the API
             param = {}
             message = {}
