@@ -12,23 +12,22 @@ def webhook_messenger(request: HttpRequest):
         facebook_url = 'https://graph.facebook.com/v2.6/me/messages?access_token='
         facebook_url += settings.PAGE_TOKEN
         post = request.POST
-        if 'object' in post:
-            if 'page' in post['object']:
-                # Get useful parameters from the sender
-                psid = post['sender']['id']
-                print(str(psid))
-                # Construct the parameters for the API
-                param = {}
-                message = {}
-                recipient = {}
-                param['messaging_type'] = 'RESPONSE'
-                message['text'] = 'Hello friend!'
-                param['message'] = message
-                recipient['id'] = psid
-                param['recipient'] = recipient
-                # Use the API and save the response in a variable
-                fb_response = requests.post(facebook_url, data = param)
-                response.status_code = fb_response.status_code
+        if 'message' in post:
+            # Get useful parameters from the sender
+            psid = post['sender']['id']
+            print(str(psid))
+            # Construct the parameters for the API
+            param = {}
+            message = {}
+            recipient = {}
+            param['messaging_type'] = 'RESPONSE'
+            message['text'] = 'Hello friend!'
+            param['message'] = message
+            recipient['id'] = psid
+            param['recipient'] = recipient
+            # Use the API and save the response in a variable
+            fb_response = requests.post(facebook_url, data = param)
+            response.status_code = 200
         # The following response is just to acknowledge the server
         # It's required!
         else:
