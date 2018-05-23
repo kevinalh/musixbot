@@ -1,9 +1,13 @@
-from django.shortcuts import render
 from django.http import HttpResponse, HttpRequest
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 
+@csrf_exempt
+@require_POST
 def webhook_messenger(request: HttpRequest):
     response = HttpResponse(status = 200)
-    if request.method == 'POST':
-        post = request.POST
-    response.content = "This is a default response."
+    post = request.POST
+    response.content = ''
+    if 'page' in post.get('object'):
+        response.content = 'OK'
     return response
