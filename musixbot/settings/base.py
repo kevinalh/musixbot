@@ -4,7 +4,10 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 SECRET_KEY = os.environ['DJANGO_KEY']
-PAGE_TOKEN = ''
+
+MUSIXMATCH_KEY = os.environ['MUSIXMATCH_KEY']
+
+VERIFY_TOKEN = "musixbottoken"
 
 # Application definition
 
@@ -13,7 +16,8 @@ INSTALLED_APPS = [
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
-    'django.contrib.messages'
+    'django.contrib.messages',
+    'bot'
 ]
 
 MIDDLEWARE = [
@@ -45,7 +49,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'musixbot.wsgi.application'
-
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
