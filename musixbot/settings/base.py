@@ -7,6 +7,8 @@ SECRET_KEY = os.environ['DJANGO_KEY']
 
 MUSIXMATCH_KEY = os.environ['MUSIXMATCH_KEY']
 
+MUSIXMATCH_ENTRY = "https://api.musixmatch.com/ws/1.1/"
+
 VERIFY_TOKEN = "musixbottoken"
 
 # Application definition
