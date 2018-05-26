@@ -35,22 +35,24 @@ def webhook_messenger(request: HttpRequest):
         else:
             user = event.sender
             try:
+                # Mark that we've seen the message
+                user.send_action('mark_seen')
                 # Signal that we are writing a message
                 user.send_action('typing_on')
 
                 # Look for the song lyrics
                 mxm = track_search(event.text)
-                # For each track in the response, wait for user input.
-                # TODO: Make this actually happen.
-                # for track in mxm
+
                 if mxm.status == 200:
                     if len(mxm.tracks) > 0:
+                        if len(mxm.tracks) > 10:
+                            mxm.tracks = mxm.tracks[:10]
                         # Send the message to the user
-                        user.send_message(str(mxm.tracks[0]))
+                        user.send_list_tracks(mxm.tracks)
                     else:
-                        user.send_message("Couldn't find lyrics.")
+                        user.send_text("Couldn't find lyrics.")
                 else:
-                    user.send_message("Couldn't contact the lyrics service.")
+                    user.send_text("Couldn't contact the lyrics service.")
             except ValueError:
                 pass
             finally:

@@ -16,7 +16,7 @@ class MxmResponse:
             tracks = response['message']['body']['track_list']
             self.tracks = []
             for index in range(len(tracks)):
-                track = MxmTrack.objects.get_or_create_track(tracks[index]['track'])
+                track, _ = MxmTrack.objects.get_or_create_track(tracks[index]['track'])
                 self.tracks.append(track)
             self.index = len(self.tracks)
         except KeyError:
@@ -35,7 +35,7 @@ class MxmResponse:
 def track_search(lyrics):
     mxm_url = settings.MUSIXMATCH_ENTRY + "track.search"
     data = {
-        'q_lyrics': lyrics,
+        'q': lyrics,
         's_track_rating': 'desc',
         'apikey': settings.MUSIXMATCH_KEY
     }

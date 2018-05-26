@@ -9,6 +9,9 @@ MUSIXMATCH_KEY = os.environ['MUSIXMATCH_KEY']
 
 MUSIXMATCH_ENTRY = "https://api.musixmatch.com/ws/1.1/"
 
+SPOTIFY_CLIENT_ID = os.environ['SPOTIFY_CLIENT_ID']
+SPOTIFY_CLIENT_SECRET = os.environ['SPOTIFY_CLIENT_SECRET']
+
 VERIFY_TOKEN = "musixbottoken"
 
 # Application definition
