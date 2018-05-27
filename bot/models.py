@@ -5,10 +5,7 @@ from django.core.exceptions import ValidationError, ObjectDoesNotExist
 import requests
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-<<<<<<< HEAD
-=======
 from typing import Dict, List
->>>>>>> dev
 
 from .utils import sp_treat_string
 
