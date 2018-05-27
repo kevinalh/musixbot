@@ -5,8 +5,12 @@ from django.core.exceptions import ValidationError, ObjectDoesNotExist
 import requests
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
+<<<<<<< HEAD
+=======
+from typing import Dict, List
+>>>>>>> dev
 
-from typing import Dict
+from .utils import sp_treat_string
 
 
 # This is the URL for the messages API
@@ -21,7 +25,6 @@ sp = spotipy.Spotify(client_credentials_manager=client_manager)
 class TrackManager(models.Manager):
 
     def get_or_create_track(self, data: Dict):
-        track = None
         created = False
         try:
             track = MxmTrack.objects.get(commontrack_id=data['commontrack_id'])
@@ -52,8 +55,9 @@ class TrackManager(models.Manager):
             # So we're going to use the Spotify API
             image_url = data['album_coverart_100x100']
             spotify_url = None
+            sp_string = sp_treat_string(artist_name, track_name)
             try:
-                sp_track = sp.search(track_name + " " + artist_name, limit=1)
+                sp_track = sp.search(sp_string, limit=1)
             except spotipy.client.SpotifyException as e:
                 print(e)
             else:
@@ -89,21 +93,38 @@ class MessageManager(models.Manager):
         if query.get('object') != 'page':
             raise ValueError("The request doesn't have object=page as an attribute.")
 
-        try:
-            # The actual messaging object as specified by the API.
-            [messaging] = query['entry'][-1]['messaging']
-            # Use the information for creating the MessageEvent.
-            psid = messaging['sender']['id']
-            # Get or create the sender for this message.
-            sender, _ = BotUser.objects.get_or_create(psid=str(psid))
+        # The actual messaging object as specified by the API.
+        # Note that the API specification guarantees that this list has only one element.
+        [messaging] = query['entry'][-1]['messaging']
+        # Use the information for creating the MessageEvent.
+        psid = messaging['sender']['id']
+        # Get or create the sender for this message.
+        sender, _ = BotUser.objects.get_or_create(psid=str(psid))
+
+        if 'message' in messaging:
             # The actual text of the message
             message_text = messaging['message']['text']
-            # Build the object
-            event = MessageEvent(text=message_text, sender=sender)
+            if message_text[0] == "/":
+                # It's a command
+                event = MessageEvent(text=message_text, sender=sender, type=MessageEvent.COMMAND)
+            else:
+                # It's not a command but lyrics
+                event = MessageEvent(text=message_text, sender=sender, type=MessageEvent.LYRICS)
             event.save()
-            return event
-        except (AttributeError, KeyError, ValueError, ValidationError):
-            raise ValueError("The request doesn't define a messaging event.")
+        elif 'postback' in messaging:
+            # We're dealing with a favorite button press
+            commontrack_id = messaging['postback']['payload']
+            try:
+                track = MxmTrack.objects.get(commontrack_id=commontrack_id)
+            except ObjectDoesNotExist as e:
+                print(e)
+                raise ValueError
+            else:
+                event = MessageEvent(text="", sender=sender, related_track=track,
+                                     type=MessageEvent.FAVORITE)
+                event.save()
+
+        return event
 
 
 class MxmTrack(models.Model):
@@ -123,7 +144,7 @@ class MxmTrack(models.Model):
 
     objects = TrackManager()
 
-    def messenger_track(self):
+    def messenger_track(self, user):
         """
         :return: A dictionary in the Facebook-required template form.
         """
@@ -138,7 +159,16 @@ class MxmTrack(models.Model):
                 'webview_height_ratio': 'tall'
             }
         }
-        # TODO: Add buttons
+        try:
+            if not user.favorites.filter(commontrack_id=self.commontrack_id).exists():
+                # If the user hasn't checked the song as a favorite, show the button
+                msg['buttons'] = [{
+                    'type': 'postback',
+                    'title': 'Favorite',
+                    'payload': str(self.commontrack_id)
+                }]
+        except Exception as e:
+            print(e)
         return msg
 
     def __str__(self):
@@ -173,19 +203,26 @@ class BotUser(models.Model):
         msg['messaging_type'] = 'RESPONSE'
         self._send(msg)
 
-    def send_list_tracks(self, tracks):
+    def send_list_tracks(self, tracks: List[MxmTrack]):
         msg = self._build_message()
-        msn_tracks = [track.messenger_track() for track in tracks]
+        msn_tracks = [track.messenger_track(self) for track in tracks]
         msg['message'] = {
             'attachment': {
                 'type': 'template',
                 'payload': {
                     'template_type': 'generic',
+                    'sharable': 'true',
                     'elements': msn_tracks
                 }
             }
         }
         self._send(msg)
+
+    def favorites_text(self):
+        msg = "These are your favorite songs:\n"
+        for favorite in self.favorites.all():
+            msg += "- " + str(favorite) + "\n"
+        return msg
 
     def __str__(self):
         return self.psid
@@ -195,8 +232,19 @@ class MessageEvent(models.Model):
     """
     A message sent by a user to the server.
     """
+    LYRICS = 'LY'
+    FAVORITE = 'FA'
+    COMMAND = 'CO'
+    MESSAGE_TYPES = (
+        (LYRICS, 'Lyrics'),
+        (COMMAND, 'Command'),
+        (FAVORITE, 'Favorite')
+    )
+
     text = models.TextField()
+    type = models.CharField(max_length=2, choices=MESSAGE_TYPES, default=LYRICS)
     sender = models.ForeignKey('BotUser', on_delete=models.CASCADE)
+    related_track = models.ForeignKey(MxmTrack, null=True, blank=True, on_delete=models.SET_NULL)
 
     # Custom manager
     objects = MessageManager()
@@ -204,3 +252,8 @@ class MessageEvent(models.Model):
     def __str__(self):
         return self.text
 
+
+def stats_text():
+    msg = "Stats:\n"
+    msg += "Number of users: " + str(BotUser.objects.all().count()) + "\n"
+    return msg

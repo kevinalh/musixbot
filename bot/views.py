@@ -2,7 +2,7 @@ from django.http import HttpResponse, HttpRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 
-from .models import MessageEvent
+from .models import MessageEvent, stats_text
 
 from .musixmatch import track_search
 
@@ -22,7 +22,7 @@ def webhook_messenger(request: HttpRequest):
         the API standards.
     """
     response = HttpResponse(status=404, content_type='application/json')
-    response.content = "Musixbot OK"
+    response.content = 'OK'
 
     if request.method == 'POST':
         # Responding to a Messenger API request.
@@ -30,34 +30,61 @@ def webhook_messenger(request: HttpRequest):
 
         try:
             event = MessageEvent.objects.create_message(query=query)
-        except ValueError:
-            pass
+        except ValueError as e:
+            print(e)
+            return response
         else:
             user = event.sender
-            try:
-                # Mark that we've seen the message
-                user.send_action('mark_seen')
-                # Signal that we are writing a message
-                user.send_action('typing_on')
+            # Mark that we've seen the message
+            user.send_action('mark_seen')
+            # Signal that we are writing a message
+            user.send_action('typing_on')
 
+        try:
+            if event.type == MessageEvent.LYRICS:
                 # Look for the song lyrics
                 mxm = track_search(event.text)
 
                 if mxm.status == 200:
                     if len(mxm.tracks) > 0:
+                        # At least one track found
                         if len(mxm.tracks) > 10:
+                            # Make sure we don't send more than 10 templates to comply with
+                            # Facebook's API requirements.
                             mxm.tracks = mxm.tracks[:10]
                         # Send the message to the user
                         user.send_list_tracks(mxm.tracks)
                     else:
+                        # No track returned by Musixmatch
                         user.send_text("Couldn't find lyrics.")
                 else:
+                    # Some error happened while contacting Musixmatch
                     user.send_text("Couldn't contact the lyrics service.")
-            except ValueError:
-                pass
-            finally:
-                # Stop the writing signal
-                user.send_action('typing_off')
+
+            elif event.type == MessageEvent.FAVORITE:
+                # Set song as favorite
+                track = event.related_track
+                if user.favorites.filter(commontrack_id=track.commontrack_id).exists():
+                    # If song is already saved as favorite, send a message telling that's the case.
+                    user.send_text("\"" + track.track_name + "\" already saved.")
+                else:
+                    # Otherwise, save the track and send a confirmation message.
+                    user.favorites.add(track)
+                    user.send_text("\"" + track.track_name + "\" saved as favorite.")
+
+            elif event.type == MessageEvent.COMMAND:
+                # The user used a command. For now, only \stat and \fav are implemented.
+                if event.text == "/stat":
+                    msg = stats_text()
+                elif event.text == "/fav":
+                    msg = user.favorites_text()
+                else:
+                    msg = "Try the /stat or /fav commands."
+                user.send_text(msg)
+
+        except Exception as e:
+            print(e)
+
         finally:
             # The following response is just to acknowledge the server. It's required!
             response.status_code = 200
