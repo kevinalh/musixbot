@@ -1,11 +1,14 @@
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
+from django.db.models import Count, Avg, F
 
 import requests
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from typing import Dict, List
+import datetime
+import pprint
 
 from .utils import sp_treat_string
 
@@ -17,6 +20,8 @@ FB_URL = settings.MESSAGES_ENTRY + '?access_token=' + settings.PAGE_TOKEN
 client_manager = SpotifyClientCredentials(client_id=settings.SPOTIFY_CLIENT_ID,
                                           client_secret=settings.SPOTIFY_CLIENT_SECRET)
 sp = spotipy.Spotify(client_credentials_manager=client_manager)
+
+pretty_printer = pprint.PrettyPrinter(indent=4)
 
 
 class TrackManager(models.Manager):
@@ -98,28 +103,49 @@ class MessageManager(models.Manager):
         # Get or create the sender for this message.
         sender, _ = BotUser.objects.get_or_create(psid=str(psid))
 
-        if 'message' in messaging:
-            # The actual text of the message
-            message_text = messaging['message']['text']
-            if message_text[0] == "/":
-                # It's a command
-                event = MessageEvent(text=message_text, sender=sender, type=MessageEvent.COMMAND)
-            else:
-                # It's not a command but lyrics
-                event = MessageEvent(text=message_text, sender=sender, type=MessageEvent.LYRICS)
-            event.save()
-        elif 'postback' in messaging:
-            # We're dealing with a favorite button press
-            commontrack_id = messaging['postback']['payload']
-            try:
-                track = MxmTrack.objects.get(commontrack_id=commontrack_id)
-            except ObjectDoesNotExist as e:
-                print(e)
-                raise ValueError
-            else:
-                event = MessageEvent(text="", sender=sender, related_track=track,
-                                     type=MessageEvent.FAVORITE)
+        # Update or create session
+        session_created_flag = 0
+        sessions = UserSession.objects.filter(user__id=sender.id)
+        if sessions.exists():
+            # If the user had previous sessions, get the last one.
+            last_session = sessions.order_by('end_time').last()
+            if datetime.datetime.now() - last_session.end_time <= UserSession.TIME_THRESHOLD:
+                # If the duration is not longer than the threshold, just update the time.
+                session_created_flag = 1
+                last_session.save()
+        if session_created_flag != 1:
+            # If either of the last conditions weren't true, create a new session.
+            new_session = UserSession(user=sender)
+            new_session.save()
+
+        try:
+            if 'message' in messaging:
+                # The actual text of the message
+                message_text = messaging['message']['text']
+                if message_text[0] == "/":
+                    # It's a command
+                    event = MessageEvent(text=message_text, sender=sender,
+                                         type=MessageEvent.COMMAND)
+                else:
+                    # It's not a command but lyrics
+                    event = MessageEvent(text=message_text, sender=sender,
+                                         type=MessageEvent.LYRICS)
                 event.save()
+            elif 'postback' in messaging:
+                # We're dealing with a favorite button press
+                commontrack_id = messaging['postback']['payload']
+                try:
+                    track = MxmTrack.objects.get(commontrack_id=commontrack_id)
+                except ObjectDoesNotExist as e:
+                    print(e)
+                    raise ValueError
+                else:
+                    event = MessageEvent(text="", sender=sender, related_track=track,
+                                         type=MessageEvent.FAVORITE)
+                    event.save()
+        except KeyError:
+            pretty_printer.pprint(messaging)
+            raise ValueError("Message not of a expected format.")
 
         return event
 
@@ -156,16 +182,15 @@ class MxmTrack(models.Model):
                 'webview_height_ratio': 'tall'
             }
         }
-        try:
-            if not user.favorites.filter(commontrack_id=self.commontrack_id).exists():
-                # If the user hasn't checked the song as a favorite, show the button
-                msg['buttons'] = [{
-                    'type': 'postback',
-                    'title': 'Favorite',
-                    'payload': str(self.commontrack_id)
-                }]
-        except Exception as e:
-            print(e)
+
+        if not user.favorites.filter(commontrack_id=self.commontrack_id).exists():
+            # If the user hasn't checked the song as a favorite, show the button
+            msg['buttons'] = [{
+                'type': 'postback',
+                'title': 'Favorite',
+                'payload': str(self.commontrack_id)
+            }]
+
         return msg
 
     def __str__(self):
@@ -216,7 +241,7 @@ class BotUser(models.Model):
         self._send(msg)
 
     def favorites_text(self):
-        msg = "These are your favorite songs:\n"
+        msg = "❤️ These are your favorite songs:\n"
         for favorite in self.favorites.all():
             msg += "- " + str(favorite) + "\n"
         return msg
@@ -225,10 +250,30 @@ class BotUser(models.Model):
         return self.psid
 
 
+class UserSession(models.Model):
+    """
+    A user session.
+    """
+    # Time after which the session is considered different
+    TIME_THRESHOLD = datetime.timedelta(minutes=10)
+
+    user = models.ForeignKey(BotUser, on_delete=models.CASCADE)
+    start_time = models.DateTimeField(auto_now_add=True)
+    end_time = models.DateTimeField(auto_now=True)
+
+    @property
+    def duration(self):
+        return self.end_time - self.start_time
+
+    def __str__(self):
+        return str(self.start_time) + " to " + str(self.end_time)
+
+
 class MessageEvent(models.Model):
     """
     A message sent by a user to the server.
     """
+    # Possible types of messages
     LYRICS = 'LY'
     FAVORITE = 'FA'
     COMMAND = 'CO'
@@ -251,6 +296,23 @@ class MessageEvent(models.Model):
 
 
 def stats_text():
-    msg = "Stats:\n"
-    msg += "Number of users: " + str(BotUser.objects.all().count()) + "\n"
+    msg = "👨‍🏫 *Stats* \n"
+
+    # Number of users
+    msg += "😃 Number of users: " + str(BotUser.objects.all().count()) + "\n"
+
+    # Getting the top songs
+    track_fav = MxmTrack.objects.annotate(num_favorite=Count('botuser')) \
+        .exclude(num_favorite__lte=0)
+    fav_number = min(10, len(track_fav))
+    top_songs = track_fav.order_by('num_favorite')[:fav_number]
+    msg += "❤️ Top " + str(fav_number) + " favorite songs:\n"
+    for song in top_songs:
+        msg += "- " + str(song) + "\n"
+
+    # Average session length
+    avg_s = UserSession.objects.aggregate(average_session=Avg(F('end_time') - F('start_time')))
+    avg_s = avg_s['average_session']
+    msg += "🕙 Average user session length: " + str(avg_s) + "\n"
+
     return msg

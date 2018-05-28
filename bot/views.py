@@ -6,7 +6,7 @@ from .models import MessageEvent, stats_text
 
 from .musixmatch import track_search
 
-import json
+import json, sys, traceback
 
 
 @csrf_exempt
@@ -21,7 +21,7 @@ def webhook_messenger(request: HttpRequest):
     :return: HttpResponse that acknowledges the interaction in case it's well-formed according to
         the API standards.
     """
-    response = HttpResponse(status=404, content_type='application/json')
+    response = HttpResponse(status=200, content_type='application/json')
     response.content = 'OK'
 
     if request.method == 'POST':
@@ -65,7 +65,8 @@ def webhook_messenger(request: HttpRequest):
                 # Set song as favorite
                 track = event.related_track
                 if user.favorites.filter(commontrack_id=track.commontrack_id).exists():
-                    # If song is already saved as favorite, send a message telling that's the case.
+                    # If song is already saved as favorite, send a message telling that's
+                    # the case.
                     user.send_text("\"" + track.track_name + "\" already saved.")
                 else:
                     # Otherwise, save the track and send a confirmation message.
@@ -73,7 +74,7 @@ def webhook_messenger(request: HttpRequest):
                     user.send_text("\"" + track.track_name + "\" saved as favorite.")
 
             elif event.type == MessageEvent.COMMAND:
-                # The user used a command. For now, only \stat and \fav are implemented.
+                # The user used a command. For now, only /stat and /fav are implemented.
                 if event.text == "/stat":
                     msg = stats_text()
                 elif event.text == "/fav":
@@ -82,8 +83,9 @@ def webhook_messenger(request: HttpRequest):
                     msg = "Try the /stat or /fav commands."
                 user.send_text(msg)
 
-        except Exception as e:
+        except ValueError as e:
             print(e)
+            traceback.print_exc(file=sys.stdout)
 
         finally:
             # The following response is just to acknowledge the server. It's required!
