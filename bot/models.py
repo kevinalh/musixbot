@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.db.models import Count, Avg, F
+from django.utils import timezone
 
 import requests
 import spotipy
@@ -109,7 +110,7 @@ class MessageManager(models.Manager):
         if sessions.exists():
             # If the user had previous sessions, get the last one.
             last_session = sessions.order_by('end_time').last()
-            if datetime.datetime.now() - last_session.end_time <= UserSession.TIME_THRESHOLD:
+            if timezone.now() - last_session.end_time <= UserSession.TIME_THRESHOLD:
                 # If the duration is not longer than the threshold, just update the time.
                 session_created_flag = 1
                 last_session.save()
